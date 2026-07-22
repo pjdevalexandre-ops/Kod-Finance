@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "e24be950-c4a4-46db-8e0a-182c25322e43"
+      }
+    },
+    "android": {
+      "package": "com.kodfinance1.appfinanceiro"
+    }
+  }
+}
