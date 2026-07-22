@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "72693471989",
+    "project_id": "kod-finance-c6c69",
+    "storage_bucket": "kod-finance-c6c69.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:72693471989:android:aeed2995c2948d1df8c3bc",
+        "android_client_info": {
+          "package_name": "com.kodfinance.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "72693471989-cv5sfbm58j41f8tv8rq40hj2h0vgf1o0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjg4TpH0hnumcd0E-k7RQ3Qf9YJmBIG5U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "72693471989-cv5sfbm58j41f8tv8rq40hj2h0vgf1o0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
