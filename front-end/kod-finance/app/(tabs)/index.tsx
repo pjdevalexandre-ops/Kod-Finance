@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   // FAB
   fab: {
     position: 'absolute', right: Spacing.xl,
-    bottom: Platform.OS === 'ios' ? 100 : 80,
+    bottom: Platform.OS === 'ios' ? 82 : 62,
     width: 60, height: 60, borderRadius: 30,
     alignItems: 'center', justifyContent: 'center',
   },

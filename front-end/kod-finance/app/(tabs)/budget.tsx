@@ -71,12 +71,6 @@ export default function BudgetScreen() {
               {monthLabel(month)}
             </Text>
           </View>
-          <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: theme.primary }]}
-            onPress={() => setShowNewBudgetModal(true)}
-          >
-            <MaterialCommunityIcons name="plus" size={22} color="#fff" />
-          </TouchableOpacity>
         </View>
 
         {/* ── Resumo do mês ────────────────────────── */}
@@ -188,6 +182,15 @@ export default function BudgetScreen() {
           setShowNewCategoryModal(false);
         }}
       />
+
+      {/* ── FAB ─────────────────────────────────────── */}
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: theme.primary }, shadows.primary]}
+        onPress={() => setShowNewBudgetModal(true)}
+        activeOpacity={0.85}
+      >
+        <MaterialCommunityIcons name="plus" size={28} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -460,4 +463,10 @@ const styles = StyleSheet.create({
   colorRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
   colorBtn: { width: 32, height: 32, borderRadius: 16 },
   colorBtnSelected: { borderWidth: 3, borderColor: '#fff' },
+  fab: {
+    position: 'absolute', right: Spacing.xl,
+    bottom: Platform.OS === 'ios' ? 82 : 62,
+    width: 60, height: 60, borderRadius: 30,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });

@@ -344,10 +344,10 @@ export default function RecurringBillsScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.deleteBtn, { borderColor: theme.border }]}
                     onPress={() => handleDeleteBill(bill.id, bill.description)}
+                    style={{ padding: 6, borderRadius: 8, backgroundColor: theme.background }}
                   >
-                    <MaterialCommunityIcons name="trash-can-outline" size={18} color={theme.textMuted} />
+                    <MaterialCommunityIcons name="trash-can-outline" size={18} color={theme.expense} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -381,8 +381,11 @@ export default function RecurringBillsScreen() {
 
                   <View style={{ alignItems: 'flex-end' }}>
                     <Text style={[styles.billValue, { color: theme.textSecondary }]}>{formatCurrency(bill.value)}</Text>
-                    <TouchableOpacity onPress={() => handleDeleteBill(bill.id, bill.description)}>
-                      <MaterialCommunityIcons name="trash-can-outline" size={16} color={theme.textMuted} style={{ marginTop: 4 }} />
+                    <TouchableOpacity 
+                      onPress={() => handleDeleteBill(bill.id, bill.description)}
+                      style={{ padding: 6, borderRadius: 8, backgroundColor: theme.background, marginTop: 4 }}
+                    >
+                      <MaterialCommunityIcons name="trash-can-outline" size={16} color={theme.expense} />
                     </TouchableOpacity>
                   </View>
                 </View>
