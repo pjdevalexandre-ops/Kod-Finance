@@ -155,128 +155,267 @@ class GeminiService {
    * @param {string} mimeType 
    * @returns {Promise<object>}
    */
+  /**
+   * Executa OCR de alta precisão usando o Google Cloud Vision API
+   * @param {string} imageBase64 
+   * @returns {Promise<string>} O texto extraído do documento fiscal
+   */
+  async performOcr(imageBase64) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Chave de API do Gemini/Google Cloud não configurada.');
+    }
+
+    const url = `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`;
+    const requestBody = {
+      requests: [
+        {
+          image: {
+            content: imageBase64
+          },
+          features: [
+            {
+              type: 'TEXT_DETECTION'
+            }
+          ]
+        }
+      ]
+    };
+
+    console.log('Solicitando OCR para Google Cloud Vision API...');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Google Cloud Vision API HTTP error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const responses = data.responses || [];
+    if (responses.length === 0 || !responses[0].fullTextAnnotation) {
+      throw new Error('Nenhum texto detectado na imagem pelo Google Cloud Vision.');
+    }
+
+    return responses[0].fullTextAnnotation.text;
+  }
+
+  /**
+   * Valida se os dados extraídos atendem aos critérios de consistência do Kod Finance
+   * @param {object} parsed 
+   * @returns {boolean} True se for consistente, False caso contrário
+   */
+  validateReceiptSchema(parsed) {
+    if (!parsed) return false;
+    
+    // Descrição não pode ser vazia
+    if (parsed.description === undefined || parsed.description === null || String(parsed.description).trim().length === 0) {
+      return false;
+    }
+
+    // Valor (se preenchido) deve ser maior que zero
+    if (parsed.value !== null && parsed.value !== undefined) {
+      const val = parseFloat(parsed.value);
+      if (isNaN(val) || val <= 0) {
+        return false;
+      }
+    } else {
+      return false; // Sem valor identificável falha na validação
+    }
+
+    // Data (se preenchida) deve ter formato correto YYYY-MM-DD
+    if (parsed.date !== null && parsed.date !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+        return false;
+      }
+    } else {
+      return false; // Sem data falha na validação
+    }
+
+    // Categoria deve ser uma das permitidas
+    const allowedCategories = ['food', 'transport', 'shopping', 'health', 'education', 'bills', 'entertainment', 'salary', 'transfer', 'investment', 'other'];
+    if (!allowedCategories.includes(parsed.category)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Envia a imagem do recibo em base64 para a API do Gemini
+   * e extrai os dados estruturados em JSON
+   * @param {string} imageBase64 
+   * @param {string} mimeType 
+   * @returns {Promise<object>}
+   */
   async scanReceipt(imageBase64, mimeType) {
-    const promptText = `Você é um especialista em OCR e processamento de notas fiscais, cupons fiscais (NFC-e, SAT) e recibos brasileiros para o aplicativo de finanças Kod Finance.
-Analise detalhadamente a imagem do recibo/nota fornecida e extraia as seguintes informações estruturadas:
+    let ocrText = '';
+    let ocrSuccess = false;
 
-1. **Descrição/Estabelecimento**: 
-   - Procure pelo nome fantasia do estabelecimento no topo do cupom (ex: "Mcdonald's", "Carrefour", "Posto Ipiranga", "Droga Raia").
-   - Se não houver nome claro, use a Razão Social limpando termos corporativos (ex: "LOJAS AMERICANAS S.A." vira "Lojas Americanas").
+    // Etapa 2: OCR Especializado
+    try {
+      ocrText = await this.performOcr(imageBase64);
+      ocrSuccess = true;
+      console.log('OCR concluído com sucesso. Texto extraído:\n', ocrText);
+    } catch (ocrErr) {
+      console.warn('Falha no Google Vision OCR. Usando fallback direto do Gemini Vision:', ocrErr.message);
+    }
 
-2. **Valor Total**:
-   - Procure pelo valor total pago pelo cliente. Termos comuns no Brasil: "TOTAL R$", "VALOR A PAGAR", "TOTAL", "PAGAR", "VALOR TOTAL", "VALOR LIQUIDO".
-   - Ignore subtotais ou valores parciais se houver descontos. Extraia o valor final pago.
-   - Retorne sempre em formato de número decimal de ponto flutuante (ex: 89.90).
+    // Etapa 3: Enviar Texto + Imagem para o Gemini
+    const systemInstruction = `Você é um especialista altamente preciso em ler documentos fiscais brasileiros (NFC-e, SAT, recibos e comprovantes de pagamento).
+Sua missão é extrair informações estruturadas confiáveis da imagem da nota fiscal e/ou do texto retornado pelo scanner OCR.
 
-3. **Data da Compra**:
-   - Identifique a data em que a compra foi realizada. Geralmente fica perto do rodapé ou cabeçalho ao lado do horário da emissão (ex: "Data de Emissão", "DATA", "EMISSÃO").
-   - A data costuma estar no formato DD/MM/AAAA ou DD/MM/YY. Converta-a para o formato ISO YYYY-MM-DD (ex: "2026-07-23").
-   - Caso a imagem esteja cortada ou sem data legível, use a data atual no formato YYYY-MM-DD: "${new Date().toISOString().slice(0, 10)}".
+Utilize tanto a imagem quanto o texto OCR para encontrar as informações mais confiáveis. O texto do OCR pode conter falhas de digitação ou símbolos trocados devido à perspectiva; use a imagem para validar e desempatar.
 
-4. **Categoria**:
-   - Classifique a despesa em uma das seguintes categorias padrão do app baseando-se nos produtos comprados ou no tipo do estabelecimento:
-     * "food" -> Alimentação (Restaurantes, Supermercados, Padarias, Lanchonetes, Cafés, iFood).
-     * "transport" -> Transporte (Posto de Gasolina, Etanol, Diesel, Uber, Táxi, Estacionamento, Pedágio).
-     * "housing" -> Moradia (Luz/Energia, Água, Gás, Internet, Aluguel, Condomínio, Lojas de Material de Construção).
-     * "health" -> Saúde (Farmácias, Drogarias, Clínicas, Dentistas, Médicos).
-     * "education" -> Educação (Mensalidades, Cursos, Livros, Papelaria).
-     * "leisure" -> Lazer (Cinema, Jogos, Netflix/Spotify, Viagens, Shows).
-     * "clothing" -> Vestuário (Lojas de roupas, calçados, bolsas, acessórios).
-     * "subscriptions" -> Assinaturas e Serviços Recorrentes.
-     * "other" -> Outros (Qualquer despesa que não se encaixe nas opções acima).
+### Prioridades de Extração:
+1. **Nome do estabelecimento (description)**:
+   - Procure pelo nome fantasia limpo no topo do cupom (ex: "McDonald's", "Carrefour", "Posto Ipiranga", "Droga Raia").
+   - Limpe sufixos corporativos como "S.A.", "LTDA", "CONVENIENCIA", "AUTO POSTO", etc.
+2. **Valor TOTAL da compra (value)**:
+   - Identifique o valor total final real pago pelo cliente. Considere apenas valores próximos aos termos: "TOTAL", "TOTAL R$", "VALOR A PAGAR", "TOTAL DA VENDA".
+   - NUNCA utilize "Subtotal", "Troco", "Valor Recebido", "Desconto" ou valores de formas de pagamento não realizadas.
+   - Retorne sempre em formato de número decimal de ponto flutuante (ex: 154.87).
+3. **Data da compra (date)**:
+   - Identifique a data da transação no formato DD/MM/AAAA ou DD/MM/YY. Converta-a sempre para o formato ISO "YYYY-MM-DD" (ex: "2026-07-23").
+   - Se nenhuma data for encontrada, retorne null.
+4. **Categoria financeira (category)**:
+   - Escolha APENAS uma das seguintes categorias permitidas baseado no tipo do estabelecimento e itens comprados:
+     * "food" (Alimentação/Supermercado/Restaurante/Ifood)
+     * "transport" (Combustível/Gasolina/Uber/Metrô/Pedágio)
+     * "shopping" (Roupas/Lojas de departamento/Eletrônicos/Objetos)
+     * "health" (Farmácia/Drogaria/Consultas/Remédios)
+     * "education" (Papelaria/Livros/Cursos/Escola)
+     * "bills" (Contas fixas/Água/Luz/Internet/Gás)
+     * "entertainment" (Lazer/Cinema/Shows/Spotify/Netflix)
+     * "salary" (Salários/Entradas)
+     * "transfer" (Transferências enviadas/recebidas)
+     * "investment" (Aplicações/Investimentos)
+     * "other" (Outros/Diversos)
 
-Sua resposta deve ser EXCLUSIVAMENTE um objeto JSON válido, sem qualquer bloco de código markdown (NÃO use \`\`\`json ou \`\`\`), sem explicações, comentários ou textos adicionais antes ou depois da estrutura JSON.
+### Regras importantes:
+- Nunca invente ou assuma dados que não estejam legíveis. Se uma informação não for identificável com segurança, preencha com null.
+- Sua resposta deve ser EXCLUSIVAMENTE um objeto JSON válido, sem qualquer bloco de código markdown (NÃO use \`\`\`json ou \`\`\`), sem explicações adicionais antes ou depois da estrutura JSON.
 
-Estrutura esperada:
+Formato do JSON esperado:
 {
   "description": "Nome do Estabelecimento",
-  "value": 154.90,
+  "value": 154.87,
   "category": "food",
   "date": "2026-07-23"
 }`;
 
-    const activeModels = await this.getSupportedModels();
-    let lastError = null;
+    // Monta os conteúdos para o Gemini
+    const contents = [];
+    contents.push({
+      inlineData: {
+        data: imageBase64,
+        mimeType: mimeType
+      }
+    });
 
-    for (const modelName of activeModels) {
+    let promptText = '';
+    if (ocrSuccess) {
+      promptText = `Abaixo está o texto extraído pelo OCR de alta precisão:\n---\n${ocrText}\n---\nCombine a leitura da imagem e os dados do texto OCR acima para gerar a resposta.`;
+    } else {
+      promptText = `Analise a imagem da nota fiscal fornecida para extrair os dados.`;
+    }
+    contents.push(promptText);
+
+    // Etapa 3 & 4: Chamada com validação e Auto-Retry
+    let resultJson = null;
+    let attempts = 2; // Tenta 2 vezes (1x original + 1x auto-retry se falhar)
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        console.log(`Tentando escanear recibo com o modelo: ${modelName}`);
+        console.log(`Tentativa ${attempt} de processamento com o Gemini...`);
+        const modelName = 'gemini-2.5-flash';
 
-        // Timeout de 25 segundos para processamento de imagem
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000);
 
         const responsePromise = this.ai.models.generateContent({
           model: modelName,
-          contents: [
-            {
-              inlineData: {
-                data: imageBase64,
-                mimeType: mimeType
-              }
-            },
-            promptText
-          ]
+          contents: contents,
+          config: {
+            systemInstruction: systemInstruction
+          }
         });
 
         const response = await Promise.race([
           responsePromise,
           new Promise((_, reject) => {
-            controller.signal.addEventListener('abort', () => {
-              reject(new Error('TIMEOUT_ERROR'));
-            });
+            controller.signal.addEventListener('abort', () => reject(new Error('TIMEOUT_ERROR')));
           })
         ]);
 
         clearTimeout(timeoutId);
 
-        if (response && response.text) {
-          const rawText = response.text.trim();
-          console.log('Resposta bruta do Gemini para escaneamento:', rawText);
-
-          // Tenta extrair e converter para objeto JSON
-          try {
-            // Remove possíveis blocos de marcação markdown ```json ... ```
-            const cleanText = rawText
-              .replace(/^```json\s*/i, '')
-              .replace(/```\s*$/, '')
-              .trim();
-            
-            const parsed = JSON.parse(cleanText);
-
-            // Validações básicas e saneamento
-            return {
-              description: parsed.description || 'Despesa Escaneada',
-              value: typeof parsed.value === 'number' ? parsed.value : parseFloat(parsed.value) || 0,
-              category: ['housing', 'food', 'transport', 'education', 'health', 'leisure', 'clothing', 'subscriptions', 'other'].includes(parsed.category) ? parsed.category : 'other',
-              date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) ? parsed.date : new Date().toISOString().slice(0, 10)
-            };
-          } catch (jsonErr) {
-            console.error('Falha ao parsear resposta do Gemini como JSON:', jsonErr);
-            throw new Error('INVALID_JSON_RESPONSE');
-          }
+        if (!response || !response.text) {
+          throw new Error('Resposta vazia da IA.');
         }
 
-        throw new Error('EMPTY_RESPONSE');
-      } catch (error) {
-        console.warn(`Tentativa de escaneamento com ${modelName} falhou:`, error.message || error);
-        lastError = error;
+        const rawText = response.text.trim();
+        console.log('Resposta bruta do Gemini:', rawText);
 
-        const errorMsg = error.message || '';
-        if (error.status === 404 || error.status === 400 || errorMsg.includes('NOT_FOUND') || errorMsg.includes('is no longer available') || errorMsg.includes('not supported')) {
-          continue; // Tenta o próximo modelo
+        const cleanText = rawText
+          .replace(/^```json\s*/i, '')
+          .replace(/```\s*$/, '')
+          .trim();
+
+        const parsed = JSON.parse(cleanText);
+
+        // Validação de consistência do Schema
+        const isValid = this.validateReceiptSchema(parsed);
+        if (isValid) {
+          resultJson = parsed;
+          break; // Sucesso! Sai do loop de tentativas
+        } else {
+          throw new Error('Falha na validação de consistência dos dados do cupom.');
         }
-        break; // Outros erros sérios interrompem o loop
+      } catch (err) {
+        console.warn(`Falha na tentativa ${attempt}:`, err.message);
+        if (attempt === 1) {
+          console.log('Iniciando Auto-Retry com prompt corretivo...');
+          // Adiciona prompt de correção para a segunda tentativa
+          contents.push(`ATENÇÃO: A tentativa anterior falhou na validação. Certifique-se de retornar um JSON válido com descrição não vazia, valor de compra maior que zero (se não houver valor total claro, retorne null em vez de zero ou chute), categoria da lista permitida e data ISO YYYY-MM-DD válida.`);
+        }
       }
     }
 
-    // Se falhar, retorna um fallback vazio
-    return {
-      description: 'Nota Fiscal / Recibo',
-      value: 0,
+    // Se falhar nas duas tentativas, monta uma resposta fallback segura com nulls
+    const finalData = resultJson || {
+      description: null,
+      value: null,
       category: 'other',
-      date: new Date().toISOString().slice(0, 10),
-      error: lastError ? lastError.message : 'Falha no processamento da imagem'
+      date: null
+    };
+
+    // Mapeia categorias do prompt para categorias do Frontend
+    const categoryMapping = {
+      'food': 'food',
+      'transport': 'transport',
+      'shopping': 'clothing', // 'shopping' mapeia para 'clothing' (vestuário)
+      'health': 'health',
+      'education': 'education',
+      'bills': 'housing', // 'bills' mapeia para 'housing' (moradia)
+      'entertainment': 'leisure', // 'entertainment' mapeia para 'leisure' (lazer)
+      'salary': 'salary',
+      'transfer': 'other', // 'transfer' mapeia para 'other'
+      'investment': 'investment',
+      'other': 'other'
+    };
+
+    const finalCategory = categoryMapping[finalData.category] || 'other';
+
+    return {
+      description: finalData.description,
+      value: finalData.value,
+      category: finalCategory,
+      date: finalData.date
     };
   }
 }

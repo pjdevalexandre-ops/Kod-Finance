@@ -54,6 +54,7 @@ export default function HomeScreen() {
 
   // ─── Scan Receipt State ──────────────────────────────────────
   const [scanning, setScanning] = useState(false);
+  const [scanPhase, setScanPhase] = useState('');
   const [scanModalVisible, setScanModalVisible] = useState(false);
   const [scanResult, setScanResult] = useState({
     description: '',
@@ -111,12 +112,12 @@ export default function HomeScreen() {
       const asset = result.assets[0];
 
       setScanning(true);
+      setScanPhase('Otimizando imagem no celular...');
 
-      console.log('Redimensionando e comprimindo recibo no dispositivo...');
       const manipResult = await manipulateAsync(
         asset.uri,
-        [{ resize: { width: 1000 } }],
-        { compress: 0.75, format: SaveFormat.JPEG, base64: true }
+        [{ resize: { width: 1600 } }],
+        { compress: 0.85, format: SaveFormat.JPEG, base64: true }
       );
 
       const base64Img = manipResult.base64;
@@ -126,12 +127,18 @@ export default function HomeScreen() {
 
       const mimeType = 'image/jpeg';
 
-      console.log('Enviando imagem otimizada para a IA do Gemini...');
+      setScanPhase('Extraindo textos com OCR...');
+      
+      const iaTimer = setTimeout(() => {
+        setScanPhase('Analisando com IA do Gemini 2.5...');
+      }, 2500);
+
       const response = await api.post('/ai/scan-receipt', {
         image: base64Img,
         mimeType: mimeType,
       });
 
+      clearTimeout(iaTimer);
       setScanning(false);
 
       if (response.data?.success && response.data?.data) {
@@ -167,6 +174,12 @@ export default function HomeScreen() {
     }
     if (finalVal <= 0) {
       Alert.alert('Atenção', 'O valor deve ser maior que zero.');
+      return;
+    }
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(scanResult.date)) {
+      Alert.alert('Atenção', 'A data deve estar no formato AAAA-MM-DD.');
       return;
     }
 
@@ -541,8 +554,8 @@ export default function HomeScreen() {
       {scanning && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: '#fff' }]}>Analisando nota fiscal...</Text>
-          <Text style={[styles.loadingSub, { color: 'rgba(255,255,255,0.7)' }]}>A IA do Gemini está extraindo os valores</Text>
+          <Text style={[styles.loadingText, { color: '#fff' }]}>{scanPhase}</Text>
+          <Text style={[styles.loadingSub, { color: 'rgba(255,255,255,0.7)' }]}>Isso pode levar alguns segundos...</Text>
         </View>
       )}
     </View>
