@@ -156,24 +156,38 @@ class GeminiService {
    * @returns {Promise<object>}
    */
   async scanReceipt(imageBase64, mimeType) {
-    const promptText = `Você é um scanner de notas fiscais e recibos de compras do Kod Finance.
-Analise a imagem da nota fiscal/recibo fornecida e extraia as seguintes informações:
-1. Descrição/Estabelecimento (nome curto e limpo do local da compra, ex: "Supermercado Extra", "Posto Shell").
-2. Valor total (em formato numérico, ex: 154.90).
-3. Categoria de despesa mais adequada. Escolha APENAS uma das seguintes categorias padrão:
-   - "housing" (Moradia/Aluguel/Luz/Internet)
-   - "food" (Alimentação/Supermercado/Restaurantes)
-   - "transport" (Transporte/Combustível/Uber/Metrô)
-   - "education" (Educação/Livros/Cursos)
-   - "health" (Saúde/Farmácia/Consultas)
-   - "leisure" (Lazer/Cinema/Viagens)
-   - "clothing" (Vestuário/Roupas/Sapatos)
-   - "subscriptions" (Assinaturas de canais/streaming/Apps)
-   - "other" (Outros/Despesas Diversas)
-4. Data da compra (no formato ISO YYYY-MM-DD, ex: "2026-07-23". Se não encontrar a data, use a data atual no formato YYYY-MM-DD).
+    const promptText = `Você é um especialista em OCR e processamento de notas fiscais, cupons fiscais (NFC-e, SAT) e recibos brasileiros para o aplicativo de finanças Kod Finance.
+Analise detalhadamente a imagem do recibo/nota fornecida e extraia as seguintes informações estruturadas:
 
-Você deve responder APENAS com um objeto JSON válido, sem formatação markdown (como blocos de código \`\`\`json), sem textos adicionais antes ou depois.
-O JSON deve ter exatamente esta estrutura:
+1. **Descrição/Estabelecimento**: 
+   - Procure pelo nome fantasia do estabelecimento no topo do cupom (ex: "Mcdonald's", "Carrefour", "Posto Ipiranga", "Droga Raia").
+   - Se não houver nome claro, use a Razão Social limpando termos corporativos (ex: "LOJAS AMERICANAS S.A." vira "Lojas Americanas").
+
+2. **Valor Total**:
+   - Procure pelo valor total pago pelo cliente. Termos comuns no Brasil: "TOTAL R$", "VALOR A PAGAR", "TOTAL", "PAGAR", "VALOR TOTAL", "VALOR LIQUIDO".
+   - Ignore subtotais ou valores parciais se houver descontos. Extraia o valor final pago.
+   - Retorne sempre em formato de número decimal de ponto flutuante (ex: 89.90).
+
+3. **Data da Compra**:
+   - Identifique a data em que a compra foi realizada. Geralmente fica perto do rodapé ou cabeçalho ao lado do horário da emissão (ex: "Data de Emissão", "DATA", "EMISSÃO").
+   - A data costuma estar no formato DD/MM/AAAA ou DD/MM/YY. Converta-a para o formato ISO YYYY-MM-DD (ex: "2026-07-23").
+   - Caso a imagem esteja cortada ou sem data legível, use a data atual no formato YYYY-MM-DD: "${new Date().toISOString().slice(0, 10)}".
+
+4. **Categoria**:
+   - Classifique a despesa em uma das seguintes categorias padrão do app baseando-se nos produtos comprados ou no tipo do estabelecimento:
+     * "food" -> Alimentação (Restaurantes, Supermercados, Padarias, Lanchonetes, Cafés, iFood).
+     * "transport" -> Transporte (Posto de Gasolina, Etanol, Diesel, Uber, Táxi, Estacionamento, Pedágio).
+     * "housing" -> Moradia (Luz/Energia, Água, Gás, Internet, Aluguel, Condomínio, Lojas de Material de Construção).
+     * "health" -> Saúde (Farmácias, Drogarias, Clínicas, Dentistas, Médicos).
+     * "education" -> Educação (Mensalidades, Cursos, Livros, Papelaria).
+     * "leisure" -> Lazer (Cinema, Jogos, Netflix/Spotify, Viagens, Shows).
+     * "clothing" -> Vestuário (Lojas de roupas, calçados, bolsas, acessórios).
+     * "subscriptions" -> Assinaturas e Serviços Recorrentes.
+     * "other" -> Outros (Qualquer despesa que não se encaixe nas opções acima).
+
+Sua resposta deve ser EXCLUSIVAMENTE um objeto JSON válido, sem qualquer bloco de código markdown (NÃO use \`\`\`json ou \`\`\`), sem explicações, comentários ou textos adicionais antes ou depois da estrutura JSON.
+
+Estrutura esperada:
 {
   "description": "Nome do Estabelecimento",
   "value": 154.90,
