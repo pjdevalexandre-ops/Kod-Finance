@@ -9,6 +9,7 @@ import { useFinance } from '@/context/FinanceContext';
 import { useApp } from '@/context/AppContext';
 import { FinanceTheme, Spacing, Radius, FontSize, FontWeight, shadows } from '@/constants/theme';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import api from '@/services/api';
 import { notifyNegativeBalance, checkAndNotifyAchievements } from '@/services/notifications';
 
@@ -95,28 +96,37 @@ export default function HomeScreen() {
         ? await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
-            quality: 0.7,
-            base64: true,
+            quality: 0.8,
           })
         : await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
-            quality: 0.7,
-            base64: true,
+            quality: 0.8,
           });
 
-      if (result.canceled || !result.assets?.[0]?.base64) {
+      if (result.canceled || !result.assets?.[0]?.uri) {
         return;
       }
 
       const asset = result.assets[0];
-      const base64Img = asset.base64;
-      const fileExtension = asset.uri.split('.').pop() || 'jpg';
-      const mimeType = `image/${fileExtension === 'png' ? 'png' : 'jpeg'}`;
 
       setScanning(true);
 
-      console.log('Enviando imagem do recibo para processamento do Gemini...');
+      console.log('Redimensionando e comprimindo recibo no dispositivo...');
+      const manipResult = await manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1000 } }],
+        { compress: 0.75, format: SaveFormat.JPEG, base64: true }
+      );
+
+      const base64Img = manipResult.base64;
+      if (!base64Img) {
+        throw new Error('Falha ao gerar o base64 da imagem compactada.');
+      }
+
+      const mimeType = 'image/jpeg';
+
+      console.log('Enviando imagem otimizada para a IA do Gemini...');
       const response = await api.post('/ai/scan-receipt', {
         image: base64Img,
         mimeType: mimeType,
