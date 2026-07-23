@@ -19,3 +19,4 @@ function getBaseUrl(): string {
 export const BACKEND_URL = getBaseUrl();
 export const API_URL = `${BACKEND_URL}/api`;
 export const CHAT_URL = `${BACKEND_URL}/api/ai/chat`;
+export const SCAN_RECEIPT_URL = `${BACKEND_URL}/api/ai/scan-receipt`;

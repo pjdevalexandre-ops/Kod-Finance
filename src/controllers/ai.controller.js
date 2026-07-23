@@ -59,6 +59,41 @@ class AIController {
       });
     }
   }
+
+  /**
+   * Endpoint handler para escaneamento e extração de recibos
+   * POST /api/ai/scan-receipt
+   */
+  async scanReceipt(req, res) {
+    try {
+      const { image, mimeType } = req.body;
+
+      if (!image) {
+        return res.status(400).json({
+          success: false,
+          error: 'O campo "image" contendo o base64 da imagem é obrigatório.'
+        });
+      }
+
+      const finalMimeType = mimeType || 'image/jpeg';
+
+      // Remove prefixos de data URI se existirem
+      const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+
+      const result = await geminiService.scanReceipt(base64Data, finalMimeType);
+
+      return res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      console.error('Erro no AIController.scanReceipt:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Ocorreu um erro inesperado no servidor ao escanear o recibo.'
+      });
+    }
+  }
 }
 
 module.exports = new AIController();

@@ -1,13 +1,15 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, Platform, StatusBar, Pressable,
+  Alert, Platform, StatusBar, Pressable, Modal, ActivityIndicator, TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFinance } from '@/context/FinanceContext';
 import { useApp } from '@/context/AppContext';
 import { FinanceTheme, Spacing, Radius, FontSize, FontWeight, shadows } from '@/constants/theme';
+import * as ImagePicker from 'expo-image-picker';
+import api from '@/services/api';
 import { notifyNegativeBalance, checkAndNotifyAchievements } from '@/services/notifications';
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -48,6 +50,127 @@ export default function HomeScreen() {
   const theme   = FinanceTheme[themeMode];
 
   const [balanceVisible, setBalanceVisible] = useState(true);
+
+  // ─── Scan Receipt State ──────────────────────────────────────
+  const [scanning, setScanning] = useState(false);
+  const [scanModalVisible, setScanModalVisible] = useState(false);
+  const [scanResult, setScanResult] = useState({
+    description: '',
+    value: 0,
+    category: 'other',
+    date: new Date().toISOString().slice(0, 10),
+  });
+  const [scanValueInput, setScanValueInput] = useState('');
+
+  // Categorias de despesas
+  const expenseCategories = useMemo(() =>
+    finance.categories.filter(c => !['salary', 'freelance', 'investment'].includes(c.id)),
+    [finance.categories]
+  );
+
+  async function handleScanReceipt() {
+    Alert.alert(
+      'Escanear Nota / Recibo',
+      'Escolha como deseja capturar a imagem da nota fiscal:',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Tirar Foto', onPress: () => processImagePick(true) },
+        { text: 'Escolher da Galeria', onPress: () => processImagePick(false) },
+      ]
+    );
+  }
+
+  async function processImagePick(useCamera: boolean) {
+    try {
+      const permissionResult = useCamera 
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permissionResult.granted) {
+        Alert.alert('Permissão necessária', `O app precisa de permissão para acessar a ${useCamera ? 'câmera' : 'galeria'}.`);
+        return;
+      }
+
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.7,
+            base64: true,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.7,
+            base64: true,
+          });
+
+      if (result.canceled || !result.assets?.[0]?.base64) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const base64Img = asset.base64;
+      const fileExtension = asset.uri.split('.').pop() || 'jpg';
+      const mimeType = `image/${fileExtension === 'png' ? 'png' : 'jpeg'}`;
+
+      setScanning(true);
+
+      console.log('Enviando imagem do recibo para processamento do Gemini...');
+      const response = await api.post('/ai/scan-receipt', {
+        image: base64Img,
+        mimeType: mimeType,
+      });
+
+      setScanning(false);
+
+      if (response.data?.success && response.data?.data) {
+        const data = response.data.data;
+        if (data.error) {
+          Alert.alert('Erro no processamento', 'A IA não conseguiu ler os dados desta imagem. Tente uma foto mais nítida ou digite manualmente.');
+          return;
+        }
+
+        setScanResult({
+          description: data.description || 'Despesa Escaneada',
+          value: data.value || 0,
+          category: data.category || 'other',
+          date: data.date || new Date().toISOString().slice(0, 10),
+        });
+        setScanValueInput((data.value || 0).toString());
+        setScanModalVisible(true);
+      } else {
+        Alert.alert('Erro ao escanear', 'Não foi possível obter os dados do recibo no momento.');
+      }
+    } catch (e: any) {
+      setScanning(false);
+      console.error('Erro ao processar imagem:', e);
+      Alert.alert('Erro ao processar', 'Ocorreu um erro ao escanear a nota fiscal.');
+    }
+  }
+
+  function handleSaveScannedTransaction() {
+    const finalVal = parseFloat(scanValueInput.replace(',', '.')) || 0;
+    if (!scanResult.description.trim()) {
+      Alert.alert('Atenção', 'A descrição é obrigatória.');
+      return;
+    }
+    if (finalVal <= 0) {
+      Alert.alert('Atenção', 'O valor deve ser maior que zero.');
+      return;
+    }
+
+    finance.addTransaction({
+      description: scanResult.description.trim(),
+      value: finalVal,
+      type: 'expense',
+      categoryId: scanResult.category,
+      date: new Date(scanResult.date + 'T12:00:00.000Z').toISOString(),
+    });
+
+    setScanModalVisible(false);
+    Alert.alert('🎉 Transação salva', 'A despesa da nota fiscal foi inserida com sucesso no extrato!');
+  }
 
   const dailyTip = useMemo(() => {
     const dailyIndex = new Date().getDate() % INSIGHTS.length;
@@ -282,9 +405,9 @@ export default function HomeScreen() {
             theme={theme}
           />
           <QuickAction
-            icon="wallet-outline"
-            label="Orçamento"
-            onPress={() => router.push('/budget' as any)}
+            icon="camera-outline"
+            label="Escanear Nota"
+            onPress={handleScanReceipt}
             theme={theme}
           />
         </View>
@@ -336,6 +459,82 @@ export default function HomeScreen() {
       >
         <MaterialCommunityIcons name="robot" size={26} color="#fff" />
       </TouchableOpacity>
+      {/* ── Modal de Confirmação do Escaneamento ──── */}
+      <Modal visible={scanModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: theme.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Confirmar Despesa da Nota</Text>
+
+            <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Descrição</Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+              value={scanResult.description}
+              onChangeText={(txt) => setScanResult(prev => ({ ...prev, description: txt }))}
+              placeholder="Ex: Supermercado Extra"
+              placeholderTextColor={theme.textMuted}
+            />
+
+            <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Valor (R$)</Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+              value={scanValueInput}
+              onChangeText={setScanValueInput}
+              keyboardType="decimal-pad"
+              placeholder="0,00"
+              placeholderTextColor={theme.textMuted}
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary, marginBottom: 8 }]}>Categoria</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={{ paddingBottom: 8 }}>
+              {expenseCategories.map(cat => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.catChip,
+                    {
+                      backgroundColor: scanResult.category === cat.id ? cat.color : theme.background,
+                      borderColor: scanResult.category === cat.id ? cat.color : theme.border,
+                    },
+                  ]}
+                  onPress={() => setScanResult(prev => ({ ...prev, category: cat.id }))}
+                >
+                  <Text style={styles.catEmoji}>{cat.icon}</Text>
+                  <Text style={[styles.catName, { color: scanResult.category === cat.id ? '#fff' : theme.text }]}>
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Text style={[styles.modalLabel, { color: theme.textSecondary, marginTop: Spacing.md }]}>Data</Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+              value={scanResult.date}
+              onChangeText={(txt) => setScanResult(prev => ({ ...prev, date: txt }))}
+              placeholder="AAAA-MM-DD"
+              placeholderTextColor={theme.textMuted}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: theme.border }]} onPress={() => setScanModalVisible(false)}>
+                <Text style={[styles.modalBtnText, { color: theme.text }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: theme.primary }]} onPress={handleSaveScannedTransaction}>
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Overlay de Carregamento / Escaneamento com IA ── */}
+      {scanning && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: '#fff' }]}>Analisando nota fiscal...</Text>
+          <Text style={[styles.loadingSub, { color: 'rgba(255,255,255,0.7)' }]}>A IA do Gemini está extraindo os valores</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -514,6 +713,40 @@ const styles = StyleSheet.create({
     width: 60, height: 60, borderRadius: 30,
     alignItems: 'center', justifyContent: 'center',
   },
+  // Modal de Escaneamento
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalBox:     { borderTopLeftRadius: Radius.xxl, borderTopRightRadius: Radius.xxl, padding: Spacing.xxl, maxHeight: '85%' },
+  modalTitle:   { fontSize: FontSize.lg, fontWeight: FontWeight.bold, marginBottom: Spacing.xl },
+  modalLabel:   { fontSize: FontSize.sm, fontWeight: FontWeight.medium, marginBottom: Spacing.sm },
+  modalInput:   { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, fontSize: FontSize.base, marginBottom: Spacing.md },
+  modalActions: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md },
+  modalBtn:     { flex: 1, padding: Spacing.md, borderRadius: Radius.md, alignItems: 'center' },
+  modalBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold },
+  fieldLabel:   { fontSize: FontSize.xs, fontWeight: FontWeight.medium, marginBottom: 6 },
+  catScroll:    { flexDirection: 'row', marginBottom: 6 },
+  catChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  catEmoji: { fontSize: 16 },
+  catName: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold },
+  // Loading Overlay
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+    gap: 10,
+  },
+  loadingText: { fontSize: FontSize.md, fontWeight: FontWeight.bold },
+  loadingSub: { fontSize: FontSize.xs },
   insightCard: {
     borderRadius: Radius.xl,
     borderWidth: 1,
