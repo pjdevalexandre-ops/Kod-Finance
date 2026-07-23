@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 
 // URL gerada pelo Render após o deploy (substitua pela sua URL final do Render se necessário)
-const PRODUCTION_BACKEND_URL = "https://app-financeiro-backend.onrender.com";
+const PRODUCTION_BACKEND_URL = "https://kod-finance-backend.onrender.com";
 
 function getBaseUrl(): string {
   if (__DEV__) {
