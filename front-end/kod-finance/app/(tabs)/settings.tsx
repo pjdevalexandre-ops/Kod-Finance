@@ -19,6 +19,7 @@ import { useFinance } from '@/context/FinanceContext';
 import { FinanceTheme } from '@/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 import {
   scheduleMotivationalNotifications,
   cancelDailyReminder,
@@ -26,6 +27,7 @@ import {
 } from '@/services/notifications';
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const { user, updateProfile, themeMode, toggleTheme, signOut, goals } = useApp();
   const { transactions, budgets, balance: financeBalance } = useFinance();
   
@@ -116,13 +118,13 @@ export default function SettingsScreen() {
   ];
 
   async function handleSaveProfile() {
-    if (!name.trim() || !email.trim()) {
-      Alert.alert('Atenção', 'Nome e e-mail são necessários.');
+    if (!name.trim()) {
+      Alert.alert('Atenção', 'O nome é necessário.');
       return;
     }
     setSaving(true);
     await new Promise(r => setTimeout(r, 400));
-    updateProfile({ name: name.trim(), email: email.trim() });
+    updateProfile({ name: name.trim() });
     setSaving(false);
     Alert.alert('✅ Perfil atualizado', 'Seus dados foram salvos com sucesso.');
   }
@@ -166,7 +168,14 @@ export default function SettingsScreen() {
       {
         text: 'Sair',
         style: 'destructive',
-        onPress: () => signOut(),
+        onPress: async () => {
+          try {
+            await signOut();
+            router.replace('/');
+          } catch (e) {
+            console.error('Erro ao deslogar:', e);
+          }
+        },
       },
     ]);
   }
@@ -195,17 +204,6 @@ export default function SettingsScreen() {
             value={name}
             onChangeText={setName}
             placeholder="Seu nome"
-            placeholderTextColor={theme.textSecondary}
-          />
-
-          <FieldLabel label="E-mail" theme={theme} />
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Seu e-mail"
-            autoCapitalize="none"
-            keyboardType="email-address"
             placeholderTextColor={theme.textSecondary}
           />
 
