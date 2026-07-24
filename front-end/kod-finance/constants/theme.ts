@@ -209,6 +209,7 @@ export const DEFAULT_CATEGORIES = [
   { id: 'salary',       name: 'Salário',       icon: '💼', color: '#22c55e' },
   { id: 'freelance',    name: 'Freelance',     icon: '💻', color: '#0ea5e9' },
   { id: 'investment',   name: 'Investimentos', icon: '📈', color: '#a855f7' },
+  { id: 'installments', name: 'Parcelas',      icon: '💳', color: '#f43f5e' },
   { id: 'other',        name: 'Outros',        icon: '📦', color: '#71717a' },
 ];
 

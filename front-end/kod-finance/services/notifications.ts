@@ -239,6 +239,12 @@ export async function scheduleBillDueDateReminders(bills: RecurringBill[]) {
       // Se a conta já foi paga este mês, pula
       if (bill.lastPaidMonth === currentMonth) continue;
 
+      // Se a conta começa no futuro, pula
+      if (bill.startDate) {
+        const startMonthYear = bill.startDate.substring(0, 7); // 'YYYY-MM'
+        if (startMonthYear > currentMonth) continue;
+      }
+
       const dueDay = bill.dueDay;
       const reminderDays = bill.reminderDaysBefore || 3;
 

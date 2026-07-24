@@ -16,6 +16,22 @@ function formatCurrency(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function addMonths(dateStr: string, monthsToAdd: number): string {
+  const parts = dateStr.split('-');
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+
+  const date = new Date(year, month, 1, 12, 0, 0);
+  date.setMonth(date.getMonth() + monthsToAdd);
+
+  const maxDays = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const targetDay = Math.min(day, maxDays);
+  date.setDate(targetDay);
+
+  return date.toISOString();
+}
+
 export default function AddTransactionScreen() {
   const router  = useRouter();
   const { themeMode } = useApp();
@@ -28,6 +44,7 @@ export default function AddTransactionScreen() {
   const [categoryId, setCategoryId] = useState('');
   const [note, setNote]             = useState('');
   const [dateDisplay, setDateDisplay] = useState(new Date().toLocaleDateString('pt-BR'));
+  const [installmentsCount, setInstallmentsCount] = useState('2');
   const [saving, setSaving]         = useState(false);
 
   const parsedValue = parseFloat(rawValue.replace(',', '.')) || 0;
@@ -49,16 +66,40 @@ export default function AddTransactionScreen() {
       return;
     }
 
+    const isInstallments = categoryId === 'installments';
+    const N = isInstallments ? (parseInt(installmentsCount, 10) || 2) : 1;
+
+    if (isInstallments && N < 2) {
+      Alert.alert('Quantidade de parcelas inválida', 'Para compras parceladas, o número mínimo é de 2 parcelas.');
+      return;
+    }
+
     setSaving(true);
     try {
-      finance.addTransaction({
-        description: description.trim(),
-        value: parsedValue,
-        type,
-        categoryId,
-        note: note.trim(),
-        date: dateObj.toISOString(),
-      });
+      if (isInstallments) {
+        // Cria N transações, uma para cada mês
+        for (let i = 1; i <= N; i++) {
+          const installmentDate = addMonths(parsedDate, i - 1);
+          finance.addTransaction({
+            description: `${description.trim()} (${i}/${N})`,
+            value: parsedValue,
+            type: 'expense',
+            categoryId,
+            note: note.trim() ? `${note.trim()} (Parcela ${i} de ${N})` : `Parcela ${i} de ${N}`,
+            date: installmentDate,
+          });
+        }
+      } else {
+        // Fluxo normal de 1 transação
+        finance.addTransaction({
+          description: description.trim(),
+          value: parsedValue,
+          type,
+          categoryId,
+          note: note.trim(),
+          date: dateObj.toISOString(),
+        });
+      }
 
       // Notificações
       if (type === 'income') {
@@ -134,7 +175,9 @@ export default function AddTransactionScreen() {
 
           {/* ── Valor grande ─────────────────────── */}
           <View style={[styles.valueCard, { backgroundColor: type === 'income' ? theme.income : theme.expense }]}>
-            <Text style={styles.valueLabel}>Valor</Text>
+            <Text style={styles.valueLabel}>
+              {categoryId === 'installments' ? 'Valor de cada parcela' : 'Valor'}
+            </Text>
             <View style={styles.valueInputRow}>
               <Text style={styles.valueCurrency}>R$</Text>
               <TextInput
@@ -195,6 +238,20 @@ export default function AddTransactionScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
+
+          {categoryId === 'installments' && (
+            <Field label="Quantidade de Parcelas" theme={theme}>
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                value={installmentsCount}
+                onChangeText={(txt) => setInstallmentsCount(txt.replace(/[^0-9]/g, ''))}
+                placeholder="Ex: 6"
+                placeholderTextColor={theme.textMuted}
+                keyboardType="numeric"
+                maxLength={3}
+              />
+            </Field>
+          )}
 
           <Field label="Observação (opcional)" theme={theme}>
             <TextInput

@@ -36,6 +36,7 @@ export interface RecurringBill {
   reminderDaysBefore: number; // Ex: 3
   lastPaidMonth?: string; // 'YYYY-MM' do último mês em que foi marcada como paga
   note?: string;
+  startDate?: string; // 'YYYY-MM-DD'
 }
 
 export interface FinanceContextData {

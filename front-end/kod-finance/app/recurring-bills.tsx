@@ -47,7 +47,15 @@ export default function RecurringBillsScreen() {
 
   // Divisão das contas no mês
   const pendingBills = useMemo(() =>
-    finance.recurringBills.filter(b => b.lastPaidMonth !== currentMonth),
+    finance.recurringBills.filter(b => {
+      if (b.startDate) {
+        const startMonthYear = b.startDate.substring(0, 7); // 'YYYY-MM'
+        if (startMonthYear > currentMonth) {
+          return false;
+        }
+      }
+      return b.lastPaidMonth !== currentMonth;
+    }),
     [finance.recurringBills, currentMonth]
   );
 
@@ -91,6 +99,7 @@ export default function RecurringBillsScreen() {
         categoryId,
         reminderDaysBefore: remDays,
         note: note.trim() || undefined,
+        startDate: parsedDate,
       });
 
       // Reagenda alertas de vencimento com a nova conta
