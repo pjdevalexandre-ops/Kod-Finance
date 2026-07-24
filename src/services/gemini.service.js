@@ -418,6 +418,94 @@ Formato do JSON esperado:
       date: finalData.date
     };
   }
+
+  /**
+   * Analisa o histórico financeiro do usuário e gera uma previsão inteligente de gastos para o próximo mês
+   * @param {object} data { transactions, recurringBills, budgets }
+   * @returns {Promise<object>} Previsão e análise inteligente
+   */
+  async getExpensesPrediction({ transactions, recurringBills, budgets }) {
+    // Saneia e resume os dados para economizar tokens
+    const recentExpenses = (transactions || [])
+      .filter(t => t.type === 'expense')
+      .slice(0, 40)
+      .map(t => ({
+        description: t.description,
+        value: t.value,
+        categoryId: t.categoryId,
+        date: t.date ? t.date.substring(0, 10) : ''
+      }));
+
+    const billsSummary = (recurringBills || []).map(b => ({
+      description: b.description,
+      value: b.value,
+      categoryId: b.categoryId,
+      dueDay: b.dueDay
+    }));
+
+    const budgetsSummary = (budgets || []).map(b => ({
+      categoryId: b.categoryId,
+      limitAmount: b.limitAmount
+    }));
+
+    const promptText = `Você é um analista financeiro pessoal de Inteligência Artificial para o aplicativo Kod Finance.
+Analise os dados financeiros do usuário para o mês atual e gere uma previsão de gastos variáveis e conselhos inteligentes para o PRÓXIMO MÊS.
+
+### Dados do Usuário:
+1. **Últimas Despesas Variáveis**:
+${JSON.stringify(recentExpenses, null, 2)}
+
+2. **Contas Fixas / Recorrentes Cadastradas**:
+${JSON.stringify(billsSummary, null, 2)}
+
+3. **Limites de Orçamentos por Categoria**:
+${JSON.stringify(budgetsSummary, null, 2)}
+
+### Sua tarefa:
+1. Analise o padrão de gastos variáveis recentes (comida, transporte, lazer, etc.).
+2. Com base nesses gastos e nos limites de orçamento, calcule uma estimativa numérica realista do total de **Gastos Variáveis** que o usuário terá no próximo mês (ex: 850.00).
+3. Escreva uma análise curta, motivadora e direta (máximo 120 caracteres) em português, aconselhando o usuário ou prevendo uma economia/alerta (ex: "Sua média em Lazer está alta. Se reduzir 10% nas saídas, economizará R$ 150 no próximo mês.").
+4. Classifique o nível de risco financeiro atual do usuário: "low" (gasta menos que o orçamento), "medium" (próximo dos limites) ou "high" (ultrapassando limites).
+
+Você deve responder APENAS com um objeto JSON válido, sem formatação markdown (como blocos de código \`\`\`json), sem textos adicionais antes ou depois.
+Estrutura esperada:
+{
+  "predictedVariable": 850.00,
+  "aiAnalysis": "Texto curto da análise aqui",
+  "riskLevel": "low"
+}`;
+
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [promptText]
+      });
+
+      if (response && response.text) {
+        const rawText = response.text.trim();
+        const cleanText = rawText
+          .replace(/^```json\s*/i, '')
+          .replace(/```\s*$/, '')
+          .trim();
+
+        const parsed = JSON.parse(cleanText);
+        return {
+          predictedVariable: typeof parsed.predictedVariable === 'number' ? parsed.predictedVariable : 0,
+          aiAnalysis: parsed.aiAnalysis || 'Continue acompanhando seus gastos diários para manter o controle.',
+          riskLevel: ['low', 'medium', 'high'].includes(parsed.riskLevel) ? parsed.riskLevel : 'low'
+        };
+      }
+    } catch (e) {
+      console.error('Erro na chamada do Gemini para previsão:', e.message);
+    }
+
+    // Fallback padrão se falhar
+    return {
+      predictedVariable: 0,
+      aiAnalysis: 'Mantenha a regularidade nos seus lançamentos para que a IA possa gerar conselhos personalizados.',
+      riskLevel: 'low'
+    };
+  }
 }
 
 module.exports = new GeminiService();

@@ -92,6 +92,30 @@ class AIController {
         success: false,
         error: 'Ocorreu um erro inesperado no servidor ao escanear o recibo.'
       });
+  /**
+   * Endpoint handler para previsão de gastos baseado em IA
+   * POST /api/ai/predict-expenses
+   */
+  async predictExpenses(req, res) {
+    try {
+      const { transactions, recurringBills, budgets } = req.body;
+
+      const result = await geminiService.getExpensesPrediction({
+        transactions: transactions || [],
+        recurringBills: recurringBills || [],
+        budgets: budgets || []
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      console.error('Erro no AIController.predictExpenses:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Ocorreu um erro inesperado no servidor ao processar a previsão de despesas.'
+      });
     }
   }
 }

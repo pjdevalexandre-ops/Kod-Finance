@@ -70,6 +70,83 @@ export default function HomeScreen() {
     [finance.categories]
   );
 
+  // ─── AI Expenses Prediction State ─────────────────────────────
+  const [aiPrediction, setAiPrediction] = useState<{
+    predictedVariable: number;
+    aiAnalysis: string;
+    riskLevel: 'low' | 'medium' | 'high';
+    loading: boolean;
+  }>({
+    predictedVariable: 0,
+    aiAnalysis: 'Analisando histórico de gastos...',
+    riskLevel: 'low',
+    loading: true,
+  });
+
+  const localRecurringTotal = useMemo(() => {
+    return finance.recurringBills.reduce((sum, b) => sum + b.value, 0);
+  }, [finance.recurringBills]);
+
+  const localVariableTotal = useMemo(() => {
+    const now = new Date();
+    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const currentMonthExpenses = finance.transactions.filter(t => 
+      t.type === 'expense' && 
+      t.date.startsWith(currentMonthStr)
+    );
+    return currentMonthExpenses.reduce((sum, t) => sum + t.value, 0);
+  }, [finance.transactions]);
+
+  useEffect(() => {
+    let active = true;
+    
+    async function fetchPrediction() {
+      try {
+        setAiPrediction(prev => ({ ...prev, loading: true }));
+        const response = await api.post('/ai/predict-expenses', {
+          transactions: finance.transactions,
+          recurringBills: finance.recurringBills,
+          budgets: finance.budgets,
+        });
+
+        if (active && response.data?.success && response.data?.data) {
+          const data = response.data.data;
+          setAiPrediction({
+            predictedVariable: data.predictedVariable || 0,
+            aiAnalysis: data.aiAnalysis || 'Acompanhe seus gastos para ter análises personalizadas.',
+            riskLevel: data.riskLevel || 'low',
+            loading: false,
+          });
+        }
+      } catch (err) {
+        console.warn('Erro ao buscar previsão da IA:', err);
+        if (active) {
+          setAiPrediction({
+            predictedVariable: 0,
+            aiAnalysis: 'Previsão indisponível. Verifique a sua conexão com a internet.',
+            riskLevel: 'low',
+            loading: false,
+          });
+        }
+      }
+    }
+
+    if (finance.transactions.length > 0 || finance.recurringBills.length > 0) {
+      fetchPrediction();
+    } else {
+      setAiPrediction({
+        predictedVariable: 0,
+        aiAnalysis: 'Adicione despesas ou contas fixas para começar a ver previsões de IA.',
+        riskLevel: 'low',
+        loading: false,
+      });
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [finance.transactions, finance.recurringBills, finance.budgets]);
+
   async function handleScanReceipt() {
     Alert.alert(
       'Escanear Nota / Recibo',
@@ -371,6 +448,74 @@ export default function HomeScreen() {
               icon="fire"
               theme={theme}
             />
+          </View>
+        </View>
+
+        {/* ── Card de Previsões com IA ────────── */}
+        <View style={[
+          styles.predictionCard,
+          { 
+            backgroundColor: theme.card, 
+            borderColor: aiPrediction.riskLevel === 'high' 
+              ? theme.expense 
+              : aiPrediction.riskLevel === 'medium' 
+                ? theme.warning 
+                : theme.border
+          }
+        ]}>
+          <View style={styles.predictionHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <MaterialCommunityIcons name="robot" size={20} color={theme.primary} />
+              <Text style={[styles.predictionTitle, { color: theme.text }]}>Previsão para Próximo Mês</Text>
+            </View>
+            <View style={[
+              styles.riskBadge,
+              { 
+                backgroundColor: aiPrediction.riskLevel === 'high' 
+                  ? theme.expenseLight 
+                  : aiPrediction.riskLevel === 'medium' 
+                    ? theme.warningLight 
+                    : theme.primaryLight 
+              }
+            ]}>
+              <Text style={[
+                styles.riskBadgeText,
+                { 
+                  color: aiPrediction.riskLevel === 'high' 
+                    ? theme.expenseText 
+                    : aiPrediction.riskLevel === 'medium' 
+                      ? theme.warning 
+                      : theme.primary 
+                }
+              ]}>
+                {aiPrediction.riskLevel === 'high' ? 'Risco Alto' : aiPrediction.riskLevel === 'medium' ? 'Moderado' : 'Estável'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.predictionRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.predictionLabel, { color: theme.textSecondary }]}>Gasto Total Estimado</Text>
+              <Text style={[styles.predictionValue, { color: theme.text }]}>
+                {formatCurrency(localRecurringTotal + (aiPrediction.predictedVariable || localVariableTotal))}
+              </Text>
+            </View>
+            <View style={[styles.predictionDivider, { backgroundColor: theme.border }]} />
+            <View style={{ flex: 1, paddingLeft: 12 }}>
+              <Text style={[styles.predictionSubLabel, { color: theme.textSecondary }]}>
+                Fixas: <Text style={{ color: theme.text, fontWeight: 'bold' }}>{formatCurrency(localRecurringTotal)}</Text>
+              </Text>
+              <Text style={[styles.predictionSubLabel, { color: theme.textSecondary, marginTop: 4 }]}>
+                Variáveis: <Text style={{ color: theme.text, fontWeight: 'bold' }}>{formatCurrency(aiPrediction.predictedVariable || localVariableTotal)}</Text>
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.aiTextBox, { backgroundColor: theme.background }]}>
+            <MaterialCommunityIcons name={"sparkles" as any} size={14} color={theme.primary} style={{ marginTop: 2 }} />
+            <Text style={[styles.aiText, { color: theme.textSecondary }]}>
+              {aiPrediction.loading ? 'Processando dados com IA...' : aiPrediction.aiAnalysis}
+            </Text>
           </View>
         </View>
 
@@ -770,6 +915,65 @@ const styles = StyleSheet.create({
   },
   loadingText: { fontSize: FontSize.md, fontWeight: FontWeight.bold },
   loadingSub: { fontSize: FontSize.xs },
+  // Card de Previsões
+  predictionCard: {
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    borderWidth: 1,
+    marginBottom: Spacing.md,
+  },
+  predictionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  predictionTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+  },
+  riskBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: Radius.full,
+  },
+  riskBadgeText: {
+    fontSize: 9,
+    fontWeight: FontWeight.bold,
+  },
+  predictionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  predictionLabel: {
+    fontSize: FontSize.xs,
+    marginBottom: 4,
+  },
+  predictionValue: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+  },
+  predictionDivider: {
+    width: 1,
+    height: 40,
+    marginHorizontal: 12,
+  },
+  predictionSubLabel: {
+    fontSize: FontSize.xs,
+  },
+  aiTextBox: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    alignItems: 'flex-start',
+  },
+  aiText: {
+    fontSize: FontSize.xs - 1,
+    lineHeight: 16,
+    flex: 1,
+  },
   insightCard: {
     borderRadius: Radius.xl,
     borderWidth: 1,
