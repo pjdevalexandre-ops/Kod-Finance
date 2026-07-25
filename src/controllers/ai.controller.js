@@ -92,6 +92,9 @@ class AIController {
         success: false,
         error: 'Ocorreu um erro inesperado no servidor ao escanear o recibo.'
       });
+    }
+  }
+
   /**
    * Endpoint handler para previsão de gastos baseado em IA
    * POST /api/ai/predict-expenses

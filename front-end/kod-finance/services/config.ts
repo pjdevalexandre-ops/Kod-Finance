@@ -11,7 +11,7 @@ function getBaseUrl(): string {
       return `http://${ip}:3000`;
     }
     // Fallback padrão para IP local em desenvolvimento
-    return 'http://192.168.1.8:3000';
+    return 'http://192.168.1.5:3000';
   }
   return PRODUCTION_BACKEND_URL;
 }
