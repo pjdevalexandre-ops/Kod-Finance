@@ -212,34 +212,41 @@ class GeminiService {
   validateReceiptSchema(parsed) {
     if (!parsed) return false;
     
-    // Descrição não pode ser vazia
-    if (parsed.description === undefined || parsed.description === null || String(parsed.description).trim().length === 0) {
+    // Deve conter pelo menos descrição ou valor para ser útil
+    const hasDesc = parsed.description !== undefined && parsed.description !== null && String(parsed.description).trim().length > 0;
+    const hasVal = parsed.value !== undefined && parsed.value !== null && parseFloat(parsed.value) > 0;
+
+    if (!hasDesc && !hasVal) {
       return false;
     }
 
-    // Valor (se preenchido) deve ser maior que zero
+    // Se tiver valor, valida se é número válido positivo
     if (parsed.value !== null && parsed.value !== undefined) {
       const val = parseFloat(parsed.value);
-      if (isNaN(val) || val <= 0) {
+      if (isNaN(val) || val < 0) {
         return false;
       }
-    } else {
-      return false; // Sem valor identificável falha na validação
     }
 
-    // Data (se preenchida) deve ter formato correto YYYY-MM-DD
-    if (parsed.date !== null && parsed.date !== undefined) {
+    // Data (opcional, tenta formatar ou anular se for inválida)
+    if (parsed.date !== null && parsed.date !== undefined && parsed.date !== '') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
-        return false;
+        // Tenta converter formato brasileiro DD/MM/AAAA para YYYY-MM-DD
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(parsed.date)) {
+          const parts = parsed.date.split('/');
+          parsed.date = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        } else {
+          parsed.date = null; // ignora data mal formatada
+        }
       }
     } else {
-      return false; // Sem data falha na validação
+      parsed.date = null;
     }
 
-    // Categoria deve ser uma das permitidas
+    // Categoria opcional, se inválida substitui por 'other'
     const allowedCategories = ['food', 'transport', 'shopping', 'health', 'education', 'bills', 'entertainment', 'salary', 'transfer', 'investment', 'other'];
-    if (!allowedCategories.includes(parsed.category)) {
-      return false;
+    if (!parsed.category || !allowedCategories.includes(parsed.category)) {
+      parsed.category = 'other';
     }
 
     return true;
