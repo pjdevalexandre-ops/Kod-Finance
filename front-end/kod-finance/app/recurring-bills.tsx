@@ -403,6 +403,52 @@ export default function RecurringBillsScreen() {
           </>
         )}
 
+        {/* ── Gerenciar Todas as Contas Fixas ─────────── */}
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 24 }]}>Todas as Contas Cadastradas</Text>
+          <Text style={[styles.badgeCount, { backgroundColor: theme.primaryLight, color: theme.primary, marginTop: 24 }]}>
+            {finance.recurringBills.length}
+          </Text>
+        </View>
+
+        {finance.recurringBills.length === 0 ? (
+          <View style={[styles.emptyBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+              Nenhuma conta cadastrada ainda.
+            </Text>
+          </View>
+        ) : (
+          finance.recurringBills.map(bill => {
+            const cat = finance.getCategoryById(bill.categoryId);
+            return (
+              <View key={`manage-${bill.id}`} style={[styles.paidCard, { backgroundColor: theme.card, borderColor: theme.border, marginBottom: 8 }]}>
+                <View style={[styles.billTitleGroup, { flex: 1 }]}>
+                  <Text style={styles.billEmoji}>{cat?.icon ?? '📄'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.billTitle, { color: theme.text }]} numberOfLines={1}>
+                      {bill.description}
+                    </Text>
+                    <Text style={[styles.paidTag, { color: theme.textSecondary, textDecorationLine: 'none' }]}>
+                      Vence todo dia {bill.dueDay}
+                      {bill.startDate ? ` • Início: ${bill.startDate.split('-').reverse().join('/')}` : ''}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={{ alignItems: 'flex-end', marginLeft: 12 }}>
+                  <Text style={[styles.billValue, { color: theme.text }]}>{formatCurrency(bill.value)}</Text>
+                  <TouchableOpacity 
+                    onPress={() => handleDeleteBill(bill.id, bill.description)}
+                    style={{ padding: 6, borderRadius: 8, backgroundColor: theme.background, marginTop: 4 }}
+                  >
+                    <MaterialCommunityIcons name="trash-can-outline" size={16} color={theme.expense} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
