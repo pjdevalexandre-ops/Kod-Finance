@@ -48,6 +48,7 @@ function RootLayoutContent() {
         <Stack.Screen name="goals" options={{ headerShown: false }} />
         <Stack.Screen name="edit-goal" options={{ headerShown: false }} />
         <Stack.Screen name="recurring-bills" options={{ headerShown: false }} />
+        <Stack.Screen name="chat-ai" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

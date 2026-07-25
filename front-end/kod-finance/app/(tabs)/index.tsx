@@ -207,7 +207,7 @@ export default function HomeScreen() {
       setScanPhase('Extraindo textos com OCR...');
       
       const iaTimer = setTimeout(() => {
-        setScanPhase('Analisando com IA do Gemini 2.5...');
+        setScanPhase('Analisando com Kod AI...');
       }, 2500);
 
       const response = await api.post('/ai/scan-receipt', {
