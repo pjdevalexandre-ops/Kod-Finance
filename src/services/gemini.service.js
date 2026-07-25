@@ -332,64 +332,83 @@ Formato do JSON esperado:
     }
     contents.push(promptText);
 
-    // Etapa 3 & 4: Chamada com validação e Auto-Retry
+    // Etapa 3 & 4: Chamada com validação e Auto-Retry com loop de modelos
+    const activeModels = await this.getSupportedModels();
     let resultJson = null;
-    let attempts = 2; // Tenta 2 vezes (1x original + 1x auto-retry se falhar)
+    let success = false;
 
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        console.log(`Tentativa ${attempt} de processamento com o Gemini...`);
-        const modelName = 'gemini-2.5-flash';
+    for (const modelName of activeModels) {
+      console.log(`Tentando processamento de recibo com o modelo: ${modelName}`);
+      let attempts = 2; // Tenta 2 vezes por modelo se falhar na validação
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          console.log(`Tentativa ${attempt} de processamento com o modelo ${modelName}...`);
 
-        const responsePromise = this.ai.models.generateContent({
-          model: modelName,
-          contents: contents,
-          config: {
-            systemInstruction: systemInstruction
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+          const responsePromise = this.ai.models.generateContent({
+            model: modelName,
+            contents: contents,
+            config: {
+              systemInstruction: systemInstruction
+            }
+          });
+
+          const response = await Promise.race([
+            responsePromise,
+            new Promise((_, reject) => {
+              controller.signal.addEventListener('abort', () => reject(new Error('TIMEOUT_ERROR')));
+            })
+          ]);
+
+          clearTimeout(timeoutId);
+
+          if (!response || !response.text) {
+            throw new Error('Resposta vazia da IA.');
           }
-        });
 
-        const response = await Promise.race([
-          responsePromise,
-          new Promise((_, reject) => {
-            controller.signal.addEventListener('abort', () => reject(new Error('TIMEOUT_ERROR')));
-          })
-        ]);
+          const rawText = response.text.trim();
+          console.log(`[${modelName}] Resposta bruta do Gemini:`, rawText);
 
-        clearTimeout(timeoutId);
+          const cleanText = rawText
+            .replace(/^```json\s*/i, '')
+            .replace(/```\s*$/, '')
+            .trim();
 
-        if (!response || !response.text) {
-          throw new Error('Resposta vazia da IA.');
+          const parsed = JSON.parse(cleanText);
+
+          // Validação de consistência do Schema
+          const isValid = this.validateReceiptSchema(parsed);
+          if (isValid) {
+            resultJson = parsed;
+            success = true;
+            break; // Sucesso! Sai do loop de tentativas do modelo atual
+          } else {
+            throw new Error('Falha na validação de consistência dos dados do cupom.');
+          }
+        } catch (err) {
+          console.warn(`[${modelName}] Falha na tentativa ${attempt}:`, err.message || err);
+          const errorMsg = err.message || '';
+
+          // Se for erro de modelo inexistente, não suportado ou bloqueado para novos usuários (404 / 400), pula direto para o próximo modelo
+          if (err.status === 404 || err.status === 400 || errorMsg.includes('NOT_FOUND') || errorMsg.includes('is no longer available') || errorMsg.includes('not supported') || errorMsg.includes('not found')) {
+            console.warn(`Modelo ${modelName} indisponível ou incompatível. Pulando para o próximo modelo...`);
+            attempt = attempts; // impede novas tentativas desse modelo
+            break;
+          }
+
+          if (attempt === 1) {
+            console.log('Iniciando Auto-Retry com prompt corretivo...');
+            // Adiciona prompt de correção para a segunda tentativa
+            contents.push(`ATENÇÃO: A tentativa anterior falhou na validação. Certifique-se de retornar um JSON válido com descrição não vazia, valor de compra maior que zero (se não houver valor total claro, retorne null em vez de zero ou chute), categoria da lista permitida e data ISO YYYY-MM-DD válida.`);
+          }
         }
+      }
 
-        const rawText = response.text.trim();
-        console.log('Resposta bruta do Gemini:', rawText);
-
-        const cleanText = rawText
-          .replace(/^```json\s*/i, '')
-          .replace(/```\s*$/, '')
-          .trim();
-
-        const parsed = JSON.parse(cleanText);
-
-        // Validação de consistência do Schema
-        const isValid = this.validateReceiptSchema(parsed);
-        if (isValid) {
-          resultJson = parsed;
-          break; // Sucesso! Sai do loop de tentativas
-        } else {
-          throw new Error('Falha na validação de consistência dos dados do cupom.');
-        }
-      } catch (err) {
-        console.warn(`Falha na tentativa ${attempt}:`, err.message);
-        if (attempt === 1) {
-          console.log('Iniciando Auto-Retry com prompt corretivo...');
-          // Adiciona prompt de correção para a segunda tentativa
-          contents.push(`ATENÇÃO: A tentativa anterior falhou na validação. Certifique-se de retornar um JSON válido com descrição não vazia, valor de compra maior que zero (se não houver valor total claro, retorne null em vez de zero ou chute), categoria da lista permitida e data ISO YYYY-MM-DD válida.`);
-        }
+      if (success) {
+        break; // Sucesso geral, interrompe a busca por modelos
       }
     }
 
